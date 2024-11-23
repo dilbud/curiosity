@@ -218,3 +218,20 @@ Find the current minimum rank: Use SELECT MIN(Rank) to get the smallest existing
 Generate a new minimum rank: If there are existing ranks, use GenerateMinRank to generate a new minimum rank; otherwise, use an initial rank like 'hZ'.
 
 Insert the new item: Use the generated rank to insert the new item with the smallest rank.
+
+
+
+-- Find the current highest rank in the table
+SELECT MAX(Rank) INTO @maxRank FROM Items;
+
+-- Find the rank of the item after which the item should be moved
+SELECT Rank INTO @afterRank FROM Items WHERE ItemId = 3;
+
+-- Generate the new rank that comes after @afterRank but before @maxRank
+SET @newRank = GenerateRankBetween(@afterRank, @maxRank);
+
+-- Update the item's rank in the table
+UPDATE Items 
+SET Rank = @newRank 
+WHERE ItemId = 2;
+
