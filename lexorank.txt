@@ -1,0 +1,139 @@
+Below is a complete set of MySQL functions that together implement most of the LexoRank functionality you’d see in Jira. This suite lets you:
+
+Generate a rank between two existing ranks. (For example, when reordering an issue inside a list.)
+
+Generate a new highest rank. (For appending a new item to the end of the list.)
+
+Generate a new lowest rank. (For inserting an item at the beginning.)
+
+Generate a solid initial (random) rank. (For the very first insertion when the rank table is empty.)
+
+They all use a common BASE string (composed of digits followed by uppercase letters, then lowercase letters) to maintain consistent lexicographical order. In a LexoRank system, each rank is stored as a string and extra characters are appended (or prepended) to “make room” when there isn’t any gap between adjacent items.
+
+Below is the full SQL script that you can use:
+
+sql
+-- 1. Generate a rank between two existing values
+DELIMITER //
+
+CREATE FUNCTION GenerateRankBetween (rank1 VARCHAR(255), rank2 VARCHAR(255)) 
+RETURNS VARCHAR(255)
+DETERMINISTIC
+BEGIN
+    DECLARE result VARCHAR(255) DEFAULT '';
+    DECLARE i INT DEFAULT 1;
+    DECLARE len1 INT DEFAULT LENGTH(rank1);
+    DECLARE len2 INT DEFAULT LENGTH(rank2);
+    DECLARE char1 CHAR(1);
+    DECLARE char2 CHAR(1);
+    DECLARE idx1 INT;
+    DECLARE idx2 INT;
+    DECLARE midIdx INT;
+    DECLARE BASE VARCHAR(255) DEFAULT '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    DECLARE medianChar CHAR(1);
+
+    WHILE i <= GREATEST(len1, len2) DO
+        SET char1 = SUBSTRING(rank1, i, 1);
+        SET char2 = SUBSTRING(rank2, i, 1);
+        
+        SET idx1 = IF(char1 = '', 0, LOCATE(char1, BASE) - 1);
+        SET idx2 = IF(char2 = '', 0, LOCATE(char2, BASE) - 1);
+        
+        SET midIdx = FLOOR((idx1 + idx2) / 2);
+        SET result = CONCAT(result, SUBSTRING(BASE, midIdx + 1, 1));
+        
+        SET i = i + 1;
+    END WHILE;
+    
+    -- If no gap was found (i.e. result equals the lower rank), append an extra character
+    IF result = rank1 THEN
+         SET medianChar = SUBSTRING(BASE, FLOOR(LENGTH(BASE) / 2) + 1, 1);
+         SET result = CONCAT(result, medianChar);
+    END IF;
+    
+    RETURN result;
+END //
+
+DELIMITER ;
+
+------------------------------------------------------------
+
+-- 2. Generate a new highest rank (append an extra character to the current high rank)
+DELIMITER //
+
+CREATE FUNCTION GenerateNewHighestRank (currentHighRank VARCHAR(255))
+RETURNS VARCHAR(255)
+DETERMINISTIC
+BEGIN
+    DECLARE BASE VARCHAR(255) DEFAULT '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    DECLARE medianChar CHAR(1);
+
+    SET medianChar = SUBSTRING(BASE, FLOOR(LENGTH(BASE) / 2) + 1, 1);
+    
+    IF currentHighRank IS NULL OR currentHighRank = '' THEN
+         RETURN medianChar;
+    ELSE
+         RETURN CONCAT(currentHighRank, medianChar);
+    END IF;
+END //
+
+DELIMITER ;
+
+------------------------------------------------------------
+
+-- 3. Generate a new lowest rank (prepend the smallest character to the current low rank)
+DELIMITER //
+
+CREATE FUNCTION GenerateNewLowestRank (currentLowRank VARCHAR(255))
+RETURNS VARCHAR(255)
+DETERMINISTIC
+BEGIN
+    DECLARE BASE VARCHAR(255) DEFAULT '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    DECLARE lowestChar CHAR(1) DEFAULT SUBSTRING(BASE, 1, 1);  -- '0' is the smallest in BASE
+
+    IF currentLowRank IS NULL OR currentLowRank = '' THEN
+         RETURN lowestChar;
+    ELSE
+         RETURN CONCAT(lowestChar, currentLowRank);
+    END IF;
+END //
+
+DELIMITER ;
+
+------------------------------------------------------------
+
+-- 4. Generate a solid initial (random) rank when the table is empty
+DELIMITER //
+
+CREATE FUNCTION GenerateInitialRandomRank ()
+RETURNS VARCHAR(255)
+NOT DETERMINISTIC
+BEGIN
+    DECLARE result VARCHAR(255) DEFAULT '';
+    DECLARE i INT DEFAULT 1;
+    DECLARE len INT DEFAULT 8;  -- You can adjust the desired length here
+    DECLARE BASE VARCHAR(255) DEFAULT '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    DECLARE pos INT;
+    
+    WHILE i <= len DO
+        SET pos = FLOOR(RAND() * LENGTH(BASE)) + 1;
+        SET result = CONCAT(result, SUBSTRING(BASE, pos, 1));
+        SET i = i + 1;
+    END WHILE;
+    
+    RETURN result;
+END //
+
+DELIMITER ;
+How It All Comes Together
+GenerateRankBetween(rank1, rank2): This function calculates a new rank that lies lexicographically between the two given values. If the two ranks are too "close" (for instance, consecutive), it appends an extra character to create more room—mirroring the logic behind Jira’s LexoRank when reordering agile boards.
+
+GenerateNewHighestRank(currentHighRank): When inserting at the end of the list, this function appends a median character (from the BASE) to the highest rank so that the new rank sorts after the existing one.
+
+GenerateNewLowestRank(currentLowRank): When you need to insert an item at the very beginning, this function prepends the smallest allowed character, ensuring the new rank is less than the current lowest rank.
+
+GenerateInitialRandomRank(): In cases where no ranks exist yet (for instance, on an empty rank table), this function provides a solid initial rank value as an 8‑character random string. You could also choose a fixed starting value if preferred.
+
+These functions combined offer functionality that closely mirrors Jira LexoRank. They enable dynamic, incremental ranking without the need to reassign every record—and they anticipate the edge cases (like “no room” between consecutive ranks or an empty starting table) that you’ll find in production systems like Jira.
+
+Is there any additional functionality you’d like to integrate—perhaps a rebalancing mechanism or collision checks—or any further tweaks to align even more closely with Jira’s implementation?
